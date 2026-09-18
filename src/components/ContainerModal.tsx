@@ -12,7 +12,8 @@ import {
   Scale, 
   Calendar, 
   CheckCircle2, 
-  FileText
+  FileText,
+  Dice5
 } from 'lucide-react';
 import { 
   ContainerItem, 
@@ -21,7 +22,7 @@ import {
   LoadStatus, 
   ContainerCondition 
 } from '../types';
-import { validateContainerNumber } from '../services/containerService';
+import { validateContainerNumber, generateRandomIsoContainerNumber } from '../services/containerService';
 
 interface ContainerModalProps {
   isOpen: boolean;
@@ -109,6 +110,7 @@ export const ContainerModal: React.FC<ContainerModalProps> = ({
   // Validasi & Loading
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string>('');
 
   // Inisialisasi data form saat modal dibuka
   useEffect(() => {
@@ -135,8 +137,8 @@ export const ContainerModal: React.FC<ContainerModalProps> = ({
       setTruckPlate(initialData.truckPlate || '');
       setNotes(initialData.notes || '');
     } else {
-      // Reset Default Form Baru
-      setContainerNumber('');
+      // Reset Default Form Baru (Auto-fill nomor ISO valid standar terminal)
+      setContainerNumber(generateRandomIsoContainerNumber());
       setSizeType('20ft Standard Dry (20GP)');
       setStatus('Gate In');
       setLoadStatus('FCL');
@@ -146,7 +148,7 @@ export const ContainerModal: React.FC<ContainerModalProps> = ({
       setYardTier(1);
       setGrossWeight(18.5);
       setMaxPayload(30.5);
-      setSealNumber(`SEAL-${Math.floor(100000 + Math.random() * 900000)}`);
+      setSealNumber(`ML-ID${Math.floor(100000 + Math.random() * 900000)}`);
       setShippingLine('Maersk Line');
       setVesselName('MV Meratus Prima');
       setVoyageNumber('V-2026');
@@ -159,6 +161,7 @@ export const ContainerModal: React.FC<ContainerModalProps> = ({
       setNotes('');
     }
     setErrors({});
+    setSubmitError('');
   }, [initialData, isOpen]);
 
   if (!isOpen) return null;
@@ -172,26 +175,24 @@ export const ContainerModal: React.FC<ContainerModalProps> = ({
   const validateForm = (): boolean => {
     const errs: Record<string, string> = {};
 
-    // 1. Validasi Nomor Peti Kemas (ISO 6346)
+    // 1. Validasi Nomor Peti Kemas
     const cleanNum = containerNumber.replace(/[\s-]/g, '').toUpperCase();
     if (!cleanNum) {
       errs.containerNumber = 'Nomor peti kemas wajib diisi';
-    } else if (cleanNum.length !== 11) {
-      errs.containerNumber = 'Panjang nomor peti kemas harus 11 karakter (4 huruf prefiks + 7 digit angka)';
-    } else if (!/^[A-Z]{4}\d{7}$/.test(cleanNum)) {
-      errs.containerNumber = 'Format ISO 6346 tidak valid. Contoh: MSKU7421893 atau TCKU2049180';
+    } else if (cleanNum.length < 4) {
+      errs.containerNumber = 'Panjang nomor peti kemas minimal 4 karakter (contoh: MSKU7421893)';
     }
 
     // 2. Validasi Berat Kotor
     if (isNaN(grossWeight) || grossWeight <= 0) {
       errs.grossWeight = 'Berat kotor harus berupa angka positif';
-    } else if (grossWeight < 2.0) {
-      errs.grossWeight = 'Berat peti kemas minimal 2.0 ton (bobot tare kontainer kosong)';
-    } else if (grossWeight > 35.0) {
-      errs.grossWeight = 'Berat melebihi toleransi maksimal pelabuhan (35.0 Ton)';
+    } else if (grossWeight < 1.0) {
+      errs.grossWeight = 'Berat peti kemas minimal 1.0 ton';
+    } else if (grossWeight > 40.0) {
+      errs.grossWeight = 'Berat melebihi batas maksimal pelabuhan (40.0 Ton)';
     }
 
-    // 3. Validasi Segel (Wajib untuk FCL/LCL)
+    // 3. Validasi Segel (Wajib untuk FCL/LCL jika ada)
     if (loadStatus !== 'Empty (MTY)' && !sealNumber.trim()) {
       errs.sealNumber = 'Nomor segel wajib diisi untuk peti kemas berisi muatan (FCL/LCL)';
     }
@@ -217,7 +218,11 @@ export const ContainerModal: React.FC<ContainerModalProps> = ({
     }
 
     setErrors(errs);
-    return Object.keys(errs).length === 0;
+    if (Object.keys(errs).length > 0) {
+      setSubmitError('Harap lengkapi kolom yang bertanda merah sebelum menyimpan data.');
+      return false;
+    }
+    return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -226,6 +231,7 @@ export const ContainerModal: React.FC<ContainerModalProps> = ({
 
     try {
       setIsSubmitting(true);
+      setSubmitError('');
       await onSubmit({
         containerNumber: containerNumber.replace(/[\s-]/g, '').toUpperCase(),
         sizeType,
@@ -243,7 +249,7 @@ export const ContainerModal: React.FC<ContainerModalProps> = ({
         voyageNumber: voyageNumber.trim(),
         portOfLoading: portOfLoading.trim(),
         portOfDischarge: portOfDischarge.trim(),
-        temperature: isReefer ? temperature.trim() : undefined,
+        temperature: isReefer ? (temperature.trim() || '') : '',
         condition,
         driverName: driverName.trim(),
         truckPlate: truckPlate.trim().toUpperCase(),
@@ -251,8 +257,9 @@ export const ContainerModal: React.FC<ContainerModalProps> = ({
         createdBy: currentOperatorEmail
       });
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Submit error:', err);
+      setSubmitError(err?.message || 'Gagal menyimpan ke Cloud Firestore. Silakan coba kembali.');
     } finally {
       setIsSubmitting(false);
     }
@@ -292,6 +299,17 @@ export const ContainerModal: React.FC<ContainerModalProps> = ({
         {/* Body Form (Scrollable) */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
           
+          {/* Banner Notifikasi Error jika validasi / penyimpanan terkendala */}
+          {submitError && (
+            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium flex items-start gap-2.5 animate-in fade-in">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <span className="font-semibold block mb-0.5">Perhatian:</span>
+                <span>{submitError}</span>
+              </div>
+            </div>
+          )}
+
           {/* Section 1: Identitas Utama Kontainer (ISO 6346) */}
           <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/70 space-y-4">
             <div className="flex items-center justify-between">
@@ -307,9 +325,28 @@ export const ContainerModal: React.FC<ContainerModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* No Peti Kemas */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Nomor Peti Kemas (Container No.) *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Nomor Peti Kemas *
+                  </label>
+                  {!isEdit && (
+                    <button
+                      type="button"
+                      id="btn-random-iso"
+                      onClick={() => {
+                        const randomIso = generateRandomIsoContainerNumber();
+                        setContainerNumber(randomIso);
+                        setErrors((prev) => ({ ...prev, containerNumber: '' }));
+                        setSubmitError('');
+                      }}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200 transition-colors"
+                      title="Generate nomor ISO 6346 acak yang valid secara otomatis"
+                    >
+                      <Dice5 className="w-3 h-3" />
+                      <span>Acak No. ISO</span>
+                    </button>
+                  )}
+                </div>
                 <div className="relative">
                   <input
                     id="input-container-number"
@@ -322,6 +359,7 @@ export const ContainerModal: React.FC<ContainerModalProps> = ({
                       if (errors.containerNumber) {
                         setErrors({ ...errors, containerNumber: '' });
                       }
+                      setSubmitError('');
                     }}
                     placeholder="Contoh: MSKU7421893"
                     className={`w-full font-mono text-sm px-3 py-2 bg-white rounded-lg border uppercase tracking-wider ${
@@ -343,8 +381,11 @@ export const ContainerModal: React.FC<ContainerModalProps> = ({
                 {errors.containerNumber ? (
                   <p className="text-[11px] text-rose-600 mt-1 font-medium">{errors.containerNumber}</p>
                 ) : (
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Format: 4 Huruf prefiks kode pemilik + 7 digit angka
+                  <p className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+                    <span>Format: 4 Huruf prefiks + 7 digit angka</span>
+                    {isoValidation.isStandardIso && (
+                      <span className="text-emerald-600 font-semibold">ISO 6346 Valid</span>
+                    )}
                   </p>
                 )}
               </div>

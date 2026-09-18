@@ -19,19 +19,39 @@ const CONTAINERS_COLLECTION = 'containers';
 const LOGS_COLLECTION = 'activityLogs';
 
 // Helper validasi nomor kontainer ISO 6346 (Format: 4 Huruf + 7 Angka)
-export function validateContainerNumber(num: string): { isValid: boolean; message: string } {
+export function validateContainerNumber(num: string): { isValid: boolean; message: string; isStandardIso: boolean } {
   const clean = num.replace(/[\s-]/g, '').toUpperCase();
   if (!clean) {
-    return { isValid: false, message: 'Nomor peti kemas wajib diisi' };
+    return { isValid: false, message: 'Nomor peti kemas wajib diisi', isStandardIso: false };
   }
-  if (clean.length !== 11) {
-    return { isValid: false, message: 'Nomor peti kemas harus berjumlah 11 karakter (4 huruf prefiks + 7 angka, misal: MSKU7421893)' };
+  if (clean.length < 4) {
+    return { isValid: false, message: 'Nomor peti kemas minimal 4 karakter', isStandardIso: false };
   }
-  const regex = /^[A-Z]{4}\d{7}$/;
-  if (!regex.test(clean)) {
-    return { isValid: false, message: 'Format ISO 6346 tidak valid. Harus diawali 4 huruf kapital diikuti 7 digit angka.' };
+  const isIso = /^[A-Z]{4}\d{7}$/.test(clean);
+  if (isIso) {
+    return { isValid: true, message: 'Format ISO 6346 terverifikasi (4 Huruf + 7 Digit)', isStandardIso: true };
   }
-  return { isValid: true, message: 'Format nomor kontainer valid (ISO 6346)' };
+  // Menerima juga format kontainer domestik / inter-island (misal: 4 huruf + angka)
+  return { isValid: true, message: 'Format terdeteksi (Format non-ISO / Domestik)', isStandardIso: false };
+}
+
+// Generator Nomor Peti Kemas ISO 6346 Acak Valid
+export function generateRandomIsoContainerNumber(): string {
+  const prefixes = ['MSKU', 'TCKU', 'MRTU', 'TEMU', 'ONEU', 'CMAU', 'HLCU', 'SITU', 'MEDU', 'COSU'];
+  const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+  const digits = Math.floor(1000000 + Math.random() * 9000000).toString();
+  return `${prefix}${digits}`;
+}
+
+// Sanitizer untuk mencegah 'Unsupported field value: undefined' di Cloud Firestore
+export function sanitizePayload<T extends Record<string, any>>(obj: T): Record<string, any> {
+  const clean: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      clean[key] = value;
+    }
+  }
+  return clean;
 }
 
 // Data awal (Seed) untuk inisialisasi Firestore jika database masih kosong
@@ -302,17 +322,18 @@ export async function createContainer(
     createdBy: operatorName
   };
 
-  const docRef = await addDoc(collection(db, CONTAINERS_COLLECTION), newContainer);
+  const sanitizedNewContainer = sanitizePayload(newContainer);
+  const docRef = await addDoc(collection(db, CONTAINERS_COLLECTION), sanitizedNewContainer);
 
   // Catat log audit ke Firestore
-  await addDoc(collection(db, LOGS_COLLECTION), {
+  await addDoc(collection(db, LOGS_COLLECTION), sanitizePayload({
     containerNumber: cleanContainerNum,
     action: 'CREATE',
     title: `Penerimaan Peti Kemas (${cleanContainerNum})`,
     details: `Telah didaftarkan oleh ${operatorName} ke Blok ${formattedSlot} dengan status ${data.status}`,
     operator: operatorName,
     timestamp: now
-  });
+  }));
 
   return docRef.id;
 }
@@ -344,17 +365,17 @@ export async function updateContainer(
     updatePayload.containerNumber = data.containerNumber.replace(/[\s-]/g, '').toUpperCase();
   }
 
-  await updateDoc(docRef, updatePayload);
+  await updateDoc(docRef, sanitizePayload(updatePayload));
 
   // Catat log audit ke Firestore
-  await addDoc(collection(db, LOGS_COLLECTION), {
+  await addDoc(collection(db, LOGS_COLLECTION), sanitizePayload({
     containerNumber: data.containerNumber || 'UPDATE',
     action: 'UPDATE',
     title: `Pembaruan Data Peti Kemas`,
     details: `Diperbarui oleh ${operatorName}: Status ${data.status || 'Tetap'}, Posisi ${updatedSlot || 'Tetap'}`,
     operator: operatorName,
     timestamp: now
-  });
+  }));
 }
 
 // DELETE: Hapus data kontainer dari Firestore

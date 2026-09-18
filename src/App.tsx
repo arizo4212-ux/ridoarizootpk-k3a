@@ -127,9 +127,9 @@ export default function App() {
   const handleCreateSubmit = async (
     data: Omit<ContainerItem, 'id' | 'createdAt' | 'updatedAt' | 'yardSlot'>
   ) => {
-    if (!currentUser) return;
+    const operatorName = currentUser?.name || 'Petugas Terminal';
     try {
-      await createContainer(data, currentUser.name);
+      await createContainer(data, operatorName);
       showToast(
         'success',
         'Peti Kemas Terdaftar (Gate In)',
@@ -147,9 +147,10 @@ export default function App() {
   const handleEditSubmit = async (
     data: Omit<ContainerItem, 'id' | 'createdAt' | 'updatedAt' | 'yardSlot'>
   ) => {
-    if (!currentUser || !editingContainer) return;
+    if (!editingContainer) return;
+    const operatorName = currentUser?.name || 'Petugas Terminal';
     try {
-      await updateContainer(editingContainer.id, data, currentUser.name);
+      await updateContainer(editingContainer.id, data, operatorName);
       showToast(
         'success',
         'Data Diperbarui',
