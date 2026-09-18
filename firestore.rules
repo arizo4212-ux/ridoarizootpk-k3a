@@ -1,0 +1,19 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Izinkan akses operasional untuk data peti kemas dan log terminal
+    match /containers/{containerId} {
+      allow read, write: if true;
+    }
+    match /activityLogs/{logId} {
+      allow read, write: if true;
+    }
+    match /operatorProfiles/{profileId} {
+      allow read, write: if true;
+    }
+    // Aturan fallback
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

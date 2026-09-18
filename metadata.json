@@ -1,0 +1,6 @@
+{
+  "name": "Sistem Operasional Peti Kemas",
+  "description": "Aplikasi manajemen operasional terminal peti kemas dengan pelacakan kontainer, penataan yard slot, CRUD data operasional, dan database cloud persisten real-time.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

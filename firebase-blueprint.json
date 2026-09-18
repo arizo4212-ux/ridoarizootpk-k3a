@@ -1,0 +1,53 @@
+{
+  "entities": {
+    "containers": {
+      "title": "Peti Kemas (Containers)",
+      "description": "Data operasional peti kemas di terminal pelabuhan",
+      "fields": {
+        "containerNumber": { "type": "string", "description": "Nomor peti kemas standar ISO 6346 (misal TCKU1234567)" },
+        "sizeType": { "type": "string", "description": "Ukuran dan tipe peti kemas (20ft Dry, 40ft HC, Reefer, etc)" },
+        "status": { "type": "string", "description": "Status operasional: Gate In, Yard Stacking, Customs, Loading, Discharged, Gate Out" },
+        "loadStatus": { "type": "string", "description": "Status muatan: FCL, LCL, Empty" },
+        "yardBlock": { "type": "string", "description": "Blok penumpukan di lapangan: A, B, C, D" },
+        "yardSlot": { "type": "string", "description": "Posisi slot: misal B-04-02-3 (Block-Bay-Row-Tier)" },
+        "grossWeight": { "type": "number", "description": "Berat kotor kontainer dalam Ton" },
+        "sealNumber": { "type": "string", "description": "Nomor segel pengaman kontainer" },
+        "shippingLine": { "type": "string", "description": "Perusahaan pelayaran pemilik/operator kontainer" },
+        "vesselName": { "type": "string", "description": "Nama kapal pengangkut" },
+        "voyageNumber": { "type": "string", "description": "Nomor voyage pelayaran" },
+        "portOfLoading": { "type": "string", "description": "Pelabuhan asal muat" },
+        "portOfDischarge": { "type": "string", "description": "Pelabuhan tujuan bongkar" },
+        "temperature": { "type": "string", "description": "Suhu pendingin jika reefer (opsional)" },
+        "condition": { "type": "string", "description": "Kondisi fisik kontainer: Good, Minor Damage, Repair Required" },
+        "driverName": { "type": "string", "description": "Nama pengemudi truk trailer" },
+        "truckPlate": { "type": "string", "description": "Nomor plat truk pengangkut" },
+        "notes": { "type": "string", "description": "Catatan khusus operasional" },
+        "createdBy": { "type": "string", "description": "Email/Nama operator pembuat data" },
+        "createdAt": { "type": "string", "description": "Waktu pendaftaran data" },
+        "updatedAt": { "type": "string", "description": "Waktu pembaruan terakhir" }
+      }
+    },
+    "activityLogs": {
+      "title": "Log Aktivitas Operasional",
+      "description": "Riwayat mutasi, pergerakan, dan aksi operasional kontainer",
+      "fields": {
+        "containerNumber": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "operator": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
+    },
+    "operatorProfiles": {
+      "title": "Profil Operator",
+      "description": "Data sesi operator terminal",
+      "fields": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "lastLogin": { "type": "string" }
+      }
+    }
+  }
+}
