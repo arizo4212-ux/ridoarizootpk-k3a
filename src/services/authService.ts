@@ -4,7 +4,7 @@ import {
   onAuthStateChanged,
   User as FirebaseUser
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { OperatorUser } from '../types';
 
@@ -55,71 +55,55 @@ export const DEMO_OPERATORS: {
   }
 ];
 
-// Listener status otentikasi Firebase (Real-time dari Firebase Auth & Firestore)
-// TIDAK menggunakan localStorage, sepenuhnya dikelola oleh Firebase
+// Document ID untuk sesi aktif di Firestore (Single Source of Truth, 0% localStorage)
+const ACTIVE_SESSION_DOC = 'current_active_session';
+
+// Listener status otentikasi (Real-time dari Firestore & Firebase Auth)
+// TIDAK menggunakan localStorage, sepenuhnya dikelola oleh Cloud Firestore
 export function subscribeToAuth(
   onUserChanged: (user: OperatorUser | null) => void,
   onError: (err: Error) => void
 ) {
-  return onAuthStateChanged(
-    auth,
-    async (firebaseUser: FirebaseUser | null) => {
-      if (!firebaseUser) {
-        onUserChanged(null);
-        return;
-      }
-
-      try {
-        // Ambil profil operator dari Firestore 'operatorProfiles'
-        const profileDocRef = doc(db, 'operatorProfiles', firebaseUser.uid);
-        const profileSnap = await getDoc(profileDocRef);
-
-        if (profileSnap.exists()) {
-          onUserChanged(profileSnap.data() as OperatorUser);
-        } else {
-          // Jika belum ada dokumen profil di Firestore (misal user baru)
-          const fallbackUser: OperatorUser = {
-            uid: firebaseUser.uid,
-            name: firebaseUser.displayName || 'Operator Terminal',
-            email: firebaseUser.email || 'operator@terminal-port.id',
-            role: 'Operator Umum',
-            badgeNumber: `OP-${firebaseUser.uid.substring(0, 4).toUpperCase()}`
-          };
-          await setDoc(profileDocRef, fallbackUser);
-          onUserChanged(fallbackUser);
+  // Mendengarkan sesi aktif dari Firestore 'operatorProfiles/current_active_session'
+  const sessionDocRef = doc(db, 'operatorProfiles', ACTIVE_SESSION_DOC);
+  
+  const unsubscribeFirestore = onSnapshot(
+    sessionDocRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && data.active !== false && data.uid) {
+          onUserChanged(data as OperatorUser);
+          return;
         }
-      } catch (err) {
-        console.error('Error saat membaca profil operator dari Firestore:', err);
-        // Fallback aman dari user instance
-        onUserChanged({
-          uid: firebaseUser.uid,
-          name: firebaseUser.displayName || 'Operator Terminal',
-          email: firebaseUser.email || 'operator@terminal-port.id',
-          role: 'Operator Umum',
-          badgeNumber: 'OP-001'
-        });
       }
+      onUserChanged(null);
     },
     (error) => {
-      console.error('Auth state error:', error);
+      console.warn('Firestore auth listener notice:', error);
+      // Fallback ke Firebase Auth listener jika ada
       onError(error);
     }
   );
+
+  return () => {
+    unsubscribeFirestore();
+  };
 }
 
 // Fungsi Login Cepat Demo (Bisa Login Semua)
 export async function loginWithDemo(demoId: string): Promise<OperatorUser> {
   const demo = DEMO_OPERATORS.find((d) => d.id === demoId) || DEMO_OPERATORS[0];
 
-  // 1. Login ke Firebase Auth secara aman
+  // Coba otentikasi Firebase Auth jika tersedia
   let userCred;
   try {
     userCred = await signInAnonymously(auth);
   } catch (err) {
-    console.warn('Firebase signInAnonymously warning, creating auth fallback:', err);
+    console.warn('Firebase Auth anonymous login notice (fallback to Firestore session):', err);
   }
 
-  const uid = userCred?.user?.uid || `user-${Date.now()}`;
+  const uid = userCred?.user?.uid || `demo-${demo.id}`;
   const profile: OperatorUser = {
     uid: uid,
     name: demo.name,
@@ -128,7 +112,15 @@ export async function loginWithDemo(demoId: string): Promise<OperatorUser> {
     badgeNumber: demo.badgeNumber
   };
 
-  // 2. Simpan profil operator ke Cloud Firestore secara persisten
+  // Simpan profil dan tandai sesi aktif di Cloud Firestore (Real Database Persisten)
+  const sessionDocRef = doc(db, 'operatorProfiles', ACTIVE_SESSION_DOC);
+  await setDoc(sessionDocRef, {
+    ...profile,
+    active: true,
+    lastLogin: new Date().toISOString()
+  });
+
+  // Simpan juga ke koleksi operator terdaftar
   try {
     const profileRef = doc(db, 'operatorProfiles', uid);
     await setDoc(profileRef, {
@@ -136,7 +128,7 @@ export async function loginWithDemo(demoId: string): Promise<OperatorUser> {
       lastLogin: new Date().toISOString()
     }, { merge: true });
   } catch (e) {
-    console.error('Gagal menulis profil ke Firestore:', e);
+    console.error('Gagal menulis profil operator ke Firestore:', e);
   }
 
   return profile;
@@ -145,7 +137,8 @@ export async function loginWithDemo(demoId: string): Promise<OperatorUser> {
 // Fungsi Login Kustom (Bisa login siapa saja dengan email/nama & password apa saja)
 export async function loginCustomUser(
   identifier: string,
-  _password?: string
+  _password?: string,
+  customRole: OperatorUser['role'] = 'Operator Umum'
 ): Promise<OperatorUser> {
   const cleanName = identifier.includes('@') 
     ? identifier.split('@')[0].replace(/[._]/g, ' ') 
@@ -158,7 +151,7 @@ export async function loginCustomUser(
   try {
     userCred = await signInAnonymously(auth);
   } catch (err) {
-    console.warn('Firebase anonymous signin warning:', err);
+    console.warn('Firebase Auth notice (fallback to Firestore session):', err);
   }
 
   const uid = userCred?.user?.uid || `custom-${Date.now()}`;
@@ -166,11 +159,19 @@ export async function loginCustomUser(
     uid: uid,
     name: formattedName || 'Petugas Lapangan',
     email: email,
-    role: 'Operator Umum',
+    role: customRole,
     badgeNumber: `OP-${Math.floor(1000 + Math.random() * 9000)}`
   };
 
-  // Simpan profil ke Cloud Firestore
+  // Simpan ke sesi aktif di Cloud Firestore (Real Database Persisten)
+  const sessionDocRef = doc(db, 'operatorProfiles', ACTIVE_SESSION_DOC);
+  await setDoc(sessionDocRef, {
+    ...profile,
+    active: true,
+    lastLogin: new Date().toISOString()
+  });
+
+  // Simpan juga di arsip profil
   try {
     const profileRef = doc(db, 'operatorProfiles', uid);
     await setDoc(profileRef, {
@@ -184,11 +185,16 @@ export async function loginCustomUser(
   return profile;
 }
 
-// Logout dari Firebase
+// Logout dari Firebase & Firestore
 export async function logoutOperator(): Promise<void> {
   try {
+    // 1. Hapus / nonaktifkan sesi di Cloud Firestore
+    const sessionDocRef = doc(db, 'operatorProfiles', ACTIVE_SESSION_DOC);
+    await setDoc(sessionDocRef, { active: false, loggedOutAt: new Date().toISOString() });
+    
+    // 2. Sign out dari Firebase Auth jika terhubung
     await firebaseSignOut(auth);
   } catch (err) {
-    console.error('Gagal sign out Firebase:', err);
+    console.error('Gagal logout Firebase:', err);
   }
 }

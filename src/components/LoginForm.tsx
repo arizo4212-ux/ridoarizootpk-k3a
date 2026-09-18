@@ -53,8 +53,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, showToast 
 
     try {
       setIsLoading(true);
-      const user = await loginCustomUser(identifier, password);
-      showToast('success', 'Otentikasi Berhasil', `Selamat datang di sistem terminal, ${user.name}`);
+      const user = await loginCustomUser(identifier, password, selectedRole as any);
+      showToast('success', 'Otentikasi Berhasil', `Selamat datang di sistem terminal, ${user.name} (${user.role})`);
       onLoginSuccess(user);
     } catch (err: any) {
       console.error('Error saat custom login:', err);
@@ -197,6 +197,24 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, showToast 
                     className="block w-full pl-9 pr-3 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Peran / Tugas Operasional
+                </label>
+                <select
+                  id="select-login-role"
+                  value={selectedRole}
+                  onChange={(e) => setSelectedRole(e.target.value)}
+                  className="block w-full px-3 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors font-medium text-slate-700"
+                >
+                  <option value="Yard Master">Yard Master (Kepala Operasional Lapangan)</option>
+                  <option value="Crane Operator">Crane Operator (RTG & Quay Crane)</option>
+                  <option value="Surveyor / Tally">Surveyor / Tally (Inspeksi & Bea Cukai)</option>
+                  <option value="Shipping Agent">Shipping Agent (Perwakilan Pelayaran)</option>
+                  <option value="Operator Umum">Operator Umum (Gate In / Gate Out)</option>
+                </select>
               </div>
 
               <div>
